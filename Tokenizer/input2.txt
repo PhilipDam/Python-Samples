@@ -1,0 +1,8 @@
+sum = /* Split expression into parts
+         divided by comments of different
+         types
+         */
+     a1 // First operand
+     +  // operator
+     42 // Second operand
+     

@@ -1,0 +1,24 @@
+
+[definitions]
+NAME = <Python re pattern>      # Python 're' syntax (no surrounding / /)
+IDENT = [A-Za-z_][A-Za-z0-9_]*
+INT   = [0-9]+
+WS    = \s+
+COMMENT = //[^\r\n]*
+# Multiline comments (non-nested) using inline DOTALL so '.' spans newlines:
+MLCOMMENT = (?s:/\*.*?\*/)
+
+[tokens]
+Identifier = IDENT
+Integer    = INT
+Equals     = '='
+Plus       = '+'
+Minus      = '-'
+Star       = '*'
+Slash      = '/'
+LParen     = '('
+RParen     = ')'
+Trivia     = WS | COMMENT | MLCOMMENT
+
+[skip]
+Trivia
