@@ -1209,6 +1209,7 @@ def main() -> None:
 
         print("-" * 100)
         print(dump_dfa_table(bundle.mindfa.domain, bundle.mindfa.trans, bundle.mindfa.start, bundle.mindfa.accept, "MinDFA transition table:"))
+        """
 
         print("-" * 100)
         print("Tests (NFA vs DFA vs MinDFA):")
@@ -1217,7 +1218,6 @@ def main() -> None:
             dfa_ok = bundle.dfa.fullmatch(t)
             min_ok = bundle.mindfa.fullmatch(t)
             print(f"  {t!r:28}  NFA={nfa_ok}  DFA={dfa_ok}  MinDFA={min_ok}")
-        """
 
     print("=" * 100)
 
