@@ -1,30 +1,101 @@
 #!/usr/bin/env python3
 """
-docx_format_breaks.py
+================================================================================
+docx_format_breaks.commentary.py
+================================================================================
 
-Reads a .docx (Microsoft Word) file and emits the document text while inserting
-explicit START/END markers whenever formatting context changes:
+GOAL
+----
+Take a Microsoft Word .docx file as input and emit a *single text stream* as output,
+but insert explicit START/END markers whenever the formatting context changes.
 
-- Paragraph boundaries + paragraph style changes
-- Run-level bold / italic (including bold+italic)
-- Run style changes (character styles)
-- Lists (bullet vs numbered when detectable) + list level + list start/end
-- Tables + row/cell boundaries (with table start/end)
+This is useful when you want to rebuild the Word document into your own intermediate
+representation (IR), Markdown-ish format, or any downstream parser that needs to
+know exactly where formatting begins/ends.
 
-Output is plain text with lightweight markers like:
-  [[P_START style="Normal" list="bullet" lvl=0]]
-  [[B_START]]bold text[[B_END]]
-  [[I_START]]italic text[[I_END]]
-  [[TABLE_START]]
-  [[CELL_START r=0 c=1]]...
+WHAT THIS SCRIPT EMITS
+----------------------
+The output is plain text that contains:
 
-Notes / limitations (Word is… complicated):
-- “Effective” bold/italic can be inherited (run -> character style -> paragraph style -> defaults).
-  This script resolves inheritance partially: run formatting first, then run style,
-  then paragraph style, then Normal. It won’t perfectly match Word in every edge case.
-- List type (bullet vs numbered) requires reading numbering definitions. This script
-  parses the numbering part and usually identifies bullet/decimal/etc per level.
-  If it can’t, it will label the list type as "list".
+1) Document boundaries
+   [[DOC_START ...]]
+   [[DOC_END]]
+
+2) Paragraph boundaries + paragraph "context"
+   [[P_START ...]]
+   paragraph text...
+   [[P_END]]
+
+   The P_START marker includes:
+     - paragraph style name
+     - paragraph justification (alignment): left/center/right/justify/...
+     - list info, if paragraph is in a list:
+         list kind (bullet/numbered/list)
+         list nesting level (ilvl)
+         Word numbering format (numFmt), e.g. "decimal", "lowerRoman", ...
+         For numbered lists: the actual item number emitted: itemNo=<n>
+
+3) Run-level markers (within paragraph text)
+   Bold / Italic are emitted as explicit nested markers:
+     [[B_START]] ... [[B_END]]
+     [[I_START]] ... [[I_END]]
+
+   Run style (character style) is emitted as:
+     [[RSTYLE_START name="..."]] ... [[RSTYLE_END name="..."]]
+
+4) Lists (start/end markers separate from paragraph markers)
+   When the traversal enters a new list instance (Word numId changes):
+     [[LIST_START kind="numbered" numId="5" start=3 continued="true"]]
+   When leaving a list:
+     [[LIST_END kind="numbered" numId="5"]]
+
+   Notes:
+   - "start" is the configured start number for that list instance and level,
+     derived from startOverride / start.
+   - "continued" is a *heuristic* (best-effort): if we have seen the same numId earlier
+     in the document traversal, we mark continued="true". This is a good signal that
+     Word may be continuing a previous list after some intervening content.
+
+5) Tables
+   We mark the table/row/cell boundaries:
+     [[TABLE_START]]
+       [[ROW_START r=0]]
+         [[CELL_START r=0 c=0]]
+           ... paragraphs/tables within the cell ...
+         [[CELL_END r=0 c=0]]
+       [[ROW_END r=0]]
+     [[TABLE_END]]
+
+IMPORTANT REALITY CHECK
+-----------------------
+Word .docx formatting is not "simple tags". It's a web of:
+- direct formatting on runs/paragraphs,
+- styles (character + paragraph),
+- style inheritance ("basedOn"),
+- numbering definitions split across multiple XML parts,
+- overrides, continuations, multi-level list patterns, etc.
+
+This script aims to be:
+- deterministic
+- traceable
+- best-effort faithful
+without trying to replicate *every* nuance of Word's layout engine.
+
+In particular:
+- "Effective" bold/italic resolution is approximated (run -> run style -> paragraph style -> Normal).
+- Actual list *labels* (like "IV.", "a)", "1.2.3") are not fully rendered;
+  instead we output the *actual numeric counter* (itemNo) and the raw numFmt.
+
+DEPENDENCIES
+------------
+pip install python-docx
+
+USAGE
+-----
+python docx_format_breaks.commentary.py input.docx > out.txt
+python docx_format_breaks.commentary.py input.docx -o out.txt
+
+================================================================================
 """
 
 from __future__ import annotations
@@ -32,46 +103,97 @@ from __future__ import annotations
 import argparse
 import sys
 from dataclasses import dataclass
-from typing import Dict, Iterator, List, Optional, Tuple, Union
+from typing import Dict, Iterator, List, Optional, Tuple, Union, Set
 
 from docx import Document
 from docx.document import Document as DocxDocument
 from docx.table import _Cell, Table
 from docx.text.paragraph import Paragraph
 
-# python-docx exposes the underlying XML via ._element, which is sometimes required
-# for features like numbering/list detection.
+# python-docx is a high-level library, but some features (like numbering and
+# justification) are not fully exposed as convenient properties.
+# We therefore access the underlying WordprocessingML XML via ._element / ._p
+# and use qn(...) to build the fully qualified names ("w:p", "w:tbl", etc).
 from docx.oxml.ns import qn
 
 
-# -----------------------------
-# Output helpers (markers)
-# -----------------------------
+# =============================================================================
+# SECTION 1: Output helpers
+# =============================================================================
 
 def emit(out, s: str) -> None:
+    """
+    Write a string to the output stream (no newline added).
+
+    Keeping this as a helper function makes it easy to:
+    - redirect output to files,
+    - implement buffering,
+    - insert logging,
+    - or change output format later.
+    """
     out.write(s)
 
 
 def emit_line(out, s: str) -> None:
+    """
+    Write a line to the output stream, always ending with newline.
+    """
     out.write(s + "\n")
 
 
 def esc_attr(s: str) -> str:
-    # Small attribute escape for marker readability.
+    """
+    Escape a string so it can safely appear in marker attributes.
+
+    We keep escaping minimal and human-readable:
+    - only escape quotes to avoid breaking attribute syntax.
+
+    Example:
+        style name:  My "Special" Style
+        becomes:     My \\"Special\\" Style
+    """
     return (s or "").replace('"', '\\"')
 
 
-# -----------------------------
-# Block iteration (Paragraph / Table in document order)
-# -----------------------------
+# =============================================================================
+# SECTION 2: Iterating document blocks in "visual" order
+# =============================================================================
+#
+# Word documents are not stored as a simple list of paragraphs.
+# The document body contains a sequence of blocks, which can be:
+#   - paragraphs (<w:p>)
+#   - tables     (<w:tbl>)
+#
+# Each table contains rows/cells; each cell can contain paragraphs AND tables
+# (nested tables).
+#
+# python-docx exposes:
+#   doc.paragraphs
+#   doc.tables
+# but those lists do *not* preserve the interleaving order.
+#
+# Therefore, we iterate the underlying XML children of the document body (or cell)
+# and yield Paragraph/Table objects in the exact order they appear in the XML.
+# =============================================================================
 
 Block = Union[Paragraph, Table]
 
 
 def iter_block_items(parent: Union[DocxDocument, _Cell]) -> Iterator[Block]:
     """
-    Yield each paragraph and table child within *parent*, in document order.
-    Works for the main document and for table cells (which can contain paragraphs/tables).
+    Yield Paragraph and Table objects in the order they appear in the given parent.
+
+    parent can be:
+      - the whole Document
+      - a table Cell
+
+    Implementation details:
+    - For documents: parent.element.body contains the <w:body>.
+    - For cells: parent._tc contains the <w:tc> element.
+    - We iterate children and wrap them into python-docx objects.
+
+    This ordering is crucial for your use case because you want a single stream
+    of content that matches the reading order.
     """
     if isinstance(parent, DocxDocument):
         parent_elm = parent.element.body
@@ -80,135 +202,408 @@ def iter_block_items(parent: Union[DocxDocument, _Cell]) -> Iterator[Block]:
 
     for child in parent_elm.iterchildren():
         if child.tag == qn("w:p"):
+            # Wrap raw <w:p> into a Paragraph object.
             yield Paragraph(child, parent)
         elif child.tag == qn("w:tbl"):
+            # Wrap raw <w:tbl> into a Table object.
             yield Table(child, parent)
 
 
-# -----------------------------
-# Numbering (list) parsing
-# -----------------------------
+# =============================================================================
+# SECTION 3: Numbering / list model (the infamous "numbering.xml")
+# =============================================================================
+#
+# Word lists are not stored as “this paragraph is bullet” in a single attribute.
+#
+# Instead, a list paragraph typically has:
+#   <w:pPr>
+#     <w:numPr>
+#       <w:numId w:val="5"/>
+#       <w:ilvl  w:val="0"/>
+#     </w:numPr>
+#   </w:pPr>
+#
+# Where:
+# - numId identifies a *numbering instance* (<w:num>).
+# - ilvl is the nesting level (0 = top, 1 = nested, etc.)
+#
+# That numId points to an abstract definition (<w:abstractNum>),
+# which describes the formatting per level:
+#   - numFmt: bullet / decimal / roman / etc.
+#   - start:  initial number for that level
+#   - lvlText: pattern (e.g., "%1.") -- NOT rendered fully in this script
+#
+# On top of that, a <w:num> instance can override the start per level:
+#   <w:lvlOverride w:ilvl="0">
+#      <w:startOverride w:val="5"/>
+#   </w:lvlOverride>
+#
+# For your requirement:
+# - list kind (bullet/numbered)
+# - configured start number
+# - actual item numbers per paragraph
+#
+# we need:
+#   numId -> abstractNumId
+#   abstractNumId -> (ilvl -> numFmt)
+#   abstractNumId -> (ilvl -> start)
+#   numId -> (ilvl -> startOverride)
+# =============================================================================
 
 @dataclass(frozen=True)
 class ListInfo:
+    """
+    Per-paragraph list metadata extracted from <w:numPr> + numbering model.
+
+    num_id:
+      Word numbering instance ID (stringified)
+    ilvl:
+      nesting level, 0..8 typically
+    fmt:
+      Word numFmt value such as "bullet", "decimal", "lowerRoman", ...
+    kind:
+      "bullet" | "numbered" | "list"
+      We classify fmt into a simpler category.
+    """
     num_id: str
     ilvl: int
-    fmt: str  # "bullet", "decimal", "lowerLetter", etc. (Word numFmt)
-    kind: str  # "bullet" | "numbered" | "list"
+    fmt: str
+    kind: str
 
 
 def _safe_int(x: Optional[str], default: int = 0) -> int:
+    """
+    Convert a string to int safely, returning default on None/bad input.
+    """
     try:
         return int(x) if x is not None else default
     except ValueError:
         return default
 
 
-def build_numbering_maps(doc: Document) -> Tuple[Dict[str, str], Dict[str, Dict[int, str]]]:
+@dataclass
+class NumberingModel:
     """
-    Returns:
-      numId_to_abstractId: { "5": "3", ... }
-      abstractId_to_lvlFmt: { "3": {0:"bullet", 1:"decimal", ...}, ... }
+    A condensed, query-friendly view of numbering.xml.
+
+    We store just enough to:
+      - determine list type (bullet vs numbered) per numId+level
+      - determine start numbers (overrides + defaults)
+    """
+    numId_to_abstractId: Dict[str, str]
+    abstractId_to_lvlFmt: Dict[str, Dict[int, str]]
+    abstractId_to_lvlStart: Dict[str, Dict[int, int]]
+    numId_to_lvlStartOverride: Dict[str, Dict[int, int]]
+
+
+def build_numbering_model(doc: Document) -> NumberingModel:
+    """
+    Parse the document's numbering part (if present) and build the NumberingModel.
+
+    If the document has no numbering part, we return empty maps and list detection
+    will simply yield "not a list" for all paragraphs.
     """
     numId_to_abstractId: Dict[str, str] = {}
     abstractId_to_lvlFmt: Dict[str, Dict[int, str]] = {}
+    abstractId_to_lvlStart: Dict[str, Dict[int, int]] = {}
+    numId_to_lvlStartOverride: Dict[str, Dict[int, int]] = {}
 
+    # Not all documents have numbering (no lists => no numbering part).
     try:
         numbering_part = doc.part.numbering_part
     except Exception:
-        return numId_to_abstractId, abstractId_to_lvlFmt
+        return NumberingModel(
+            numId_to_abstractId, abstractId_to_lvlFmt, abstractId_to_lvlStart, numId_to_lvlStartOverride
+        )
 
-    root = numbering_part._element  # lxml element
+    root = numbering_part._element  # underlying XML root
 
-    # Map numId -> abstractNumId
+    # -------------------------------------------------------------------------
+    # 1) Parse <w:num> instances:
+    #    <w:num w:numId="5">
+    #      <w:abstractNumId w:val="3"/>
+    #      <w:lvlOverride w:ilvl="0">
+    #        <w:startOverride w:val="5"/>
+    #      </w:lvlOverride>
+    #    </w:num>
+    # -------------------------------------------------------------------------
     for num in root.findall(qn("w:num")):
         num_id = num.get(qn("w:numId"))
+        if not num_id:
+            continue
+
         abs_elm = num.find(qn("w:abstractNumId"))
         abs_id = abs_elm.get(qn("w:val")) if abs_elm is not None else None
-        if num_id and abs_id:
+        if abs_id:
             numId_to_abstractId[num_id] = abs_id
 
-    # Map abstractNumId -> per-level numFmt
+        # startOverride per level, if present
+        for lvl_override in num.findall(qn("w:lvlOverride")):
+            ilvl = _safe_int(lvl_override.get(qn("w:ilvl")), 0)
+            start_ovr = lvl_override.find(qn("w:startOverride"))
+            if start_ovr is not None:
+                val = start_ovr.get(qn("w:val"))
+                if val is not None:
+                    numId_to_lvlStartOverride.setdefault(num_id, {})[ilvl] = _safe_int(val, 1)
+
+    # -------------------------------------------------------------------------
+    # 2) Parse <w:abstractNum> definitions:
+    #    <w:abstractNum w:abstractNumId="3">
+    #      <w:lvl w:ilvl="0">
+    #         <w:numFmt w:val="decimal"/>
+    #         <w:start  w:val="1"/>
+    #      </w:lvl>
+    #      ...
+    #    </w:abstractNum>
+    # -------------------------------------------------------------------------
     for absnum in root.findall(qn("w:abstractNum")):
         abs_id = absnum.get(qn("w:abstractNumId"))
         if not abs_id:
             continue
 
-        lvl_map: Dict[int, str] = {}
+        lvl_fmt: Dict[int, str] = {}
+        lvl_start: Dict[int, int] = {}
+
         for lvl in absnum.findall(qn("w:lvl")):
             ilvl = _safe_int(lvl.get(qn("w:ilvl")), 0)
+
             fmt_elm = lvl.find(qn("w:numFmt"))
             fmt = fmt_elm.get(qn("w:val")) if fmt_elm is not None else ""
             if fmt:
-                lvl_map[ilvl] = fmt
+                lvl_fmt[ilvl] = fmt
 
-        if lvl_map:
-            abstractId_to_lvlFmt[abs_id] = lvl_map
+            start_elm = lvl.find(qn("w:start"))
+            if start_elm is not None:
+                sval = start_elm.get(qn("w:val"))
+                if sval is not None:
+                    lvl_start[ilvl] = _safe_int(sval, 1)
 
-    return numId_to_abstractId, abstractId_to_lvlFmt
+        if lvl_fmt:
+            abstractId_to_lvlFmt[abs_id] = lvl_fmt
+        if lvl_start:
+            abstractId_to_lvlStart[abs_id] = lvl_start
+
+    return NumberingModel(
+        numId_to_abstractId=numId_to_abstractId,
+        abstractId_to_lvlFmt=abstractId_to_lvlFmt,
+        abstractId_to_lvlStart=abstractId_to_lvlStart,
+        numId_to_lvlStartOverride=numId_to_lvlStartOverride,
+    )
 
 
-def paragraph_list_info(
-    p: Paragraph,
-    numId_to_abstractId: Dict[str, str],
-    abstractId_to_lvlFmt: Dict[str, Dict[int, str]],
-) -> Optional[ListInfo]:
+def paragraph_list_info(p: Paragraph, nm: NumberingModel) -> Optional[ListInfo]:
     """
-    Detect whether this paragraph is in a list, and if so return list metadata.
+    Determine whether a paragraph is part of a list.
+
+    If yes, return a ListInfo describing the list instance (numId) and nesting level (ilvl),
+    plus format classification derived from the numbering model.
+
+    If no, return None.
     """
+    # Underlying XML paragraph properties:
     pPr = p._p.pPr
     if pPr is None or pPr.numPr is None:
         return None
 
+    # Grab numId and ilvl from <w:numPr>
     numId_elm = pPr.numPr.numId
     ilvl_elm = pPr.numPr.ilvl
 
     num_id = numId_elm.val if numId_elm is not None else None
     ilvl = int(ilvl_elm.val) if ilvl_elm is not None and ilvl_elm.val is not None else 0
-
     if not num_id:
         return None
 
-    abs_id = numId_to_abstractId.get(str(num_id))
+    # Determine numFmt (bullet/decimal/etc.) from numId -> abstractNum -> lvl
+    abs_id = nm.numId_to_abstractId.get(str(num_id))
     fmt = ""
     if abs_id:
-        fmt = abstractId_to_lvlFmt.get(abs_id, {}).get(ilvl, "")
+        fmt = nm.abstractId_to_lvlFmt.get(abs_id, {}).get(ilvl, "")
 
-    # Classify into bullet/numbered/list
+    # Reduce Word's many numFmt values to a friendlier category
     if fmt == "bullet":
         kind = "bullet"
-    elif fmt in ("decimal", "decimalZero", "upperRoman", "lowerRoman",
-                 "upperLetter", "lowerLetter", "ordinal", "cardinalText",
-                 "ordinalText", "hex", "chineseCounting", "aiueo", "iroha"):
+    elif fmt in (
+        "decimal", "decimalZero",
+        "upperRoman", "lowerRoman",
+        "upperLetter", "lowerLetter",
+        "ordinal", "cardinalText",
+        "ordinalText", "hex",
+        "chineseCounting", "aiueo", "iroha",
+    ):
         kind = "numbered"
     else:
+        # Could still be numbered with some exotic format, but we label as generic "list".
         kind = "list"
 
     return ListInfo(num_id=str(num_id), ilvl=ilvl, fmt=fmt or "unknown", kind=kind)
 
 
-# -----------------------------
-# “Effective” formatting resolution (best-effort)
-# -----------------------------
+def list_configured_start(num_id: str, ilvl: int, nm: NumberingModel) -> int:
+    """
+    Get the configured *start number* for a list instance and level.
 
-@dataclass
-class RunFormat:
-    bold: bool
-    italic: bool
-    rstyle: str  # character style name (or "")
-    # You can extend this with underline, color, etc.
+    Priority order matches Word semantics:
+    1) A per-instance override (<w:startOverride>) on <w:num>/<w:lvlOverride>
+    2) The abstract definition default (<w:start>) on <w:abstractNum>/<w:lvl>
+    3) Otherwise default to 1
+    """
+    ov = nm.numId_to_lvlStartOverride.get(num_id, {}).get(ilvl)
+    if ov is not None:
+        return int(ov)
 
+    abs_id = nm.numId_to_abstractId.get(num_id)
+    if abs_id:
+        st = nm.abstractId_to_lvlStart.get(abs_id, {}).get(ilvl)
+        if st is not None:
+            return int(st)
+
+    return 1
+
+
+# =============================================================================
+# SECTION 4: Paragraph justification (alignment)
+# =============================================================================
+#
+# Word stores paragraph alignment in:
+#   <w:pPr>
+#     <w:jc w:val="center"/>
+#   </w:pPr>
+#
+# It can also be specified in the paragraph style.
+#
+# python-docx has paragraph.alignment, but it may not always reflect style inheritance
+# the way you want, and it can be an enum. We read the XML directly and do a
+# best-effort resolution:
+#   direct paragraph jc -> paragraph style jc -> Normal style jc -> "left"
+# =============================================================================
 
 def _style_name(style) -> str:
+    """
+    Return the display name of a python-docx style object, or "" if unavailable.
+    """
     try:
         return style.name or ""
     except Exception:
         return ""
 
 
+def _norm_jc(val: Optional[str]) -> str:
+    """
+    Normalize Word's jc values to a stable vocabulary.
+
+    Common Word values:
+      left, center, right, both (justified), distribute, start, end
+
+    We normalize "both" -> "justify" to reduce surprises.
+    """
+    if not val:
+        return "inherit"
+    v = val.lower()
+    mapping = {
+        "left": "left",
+        "center": "center",
+        "right": "right",
+        "both": "justify",
+        "justify": "justify",
+        "distribute": "distribute",
+        "start": "start",
+        "end": "end",
+    }
+    return mapping.get(v, v)
+
+
+def _ppr_jc_value(p: Paragraph) -> Optional[str]:
+    """
+    Read <w:jc w:val="..."> from this specific paragraph's properties (direct formatting).
+    """
+    pPr = p._p.pPr
+    if pPr is None:
+        return None
+    jc = pPr.find(qn("w:jc"))
+    if jc is None:
+        return None
+    return jc.get(qn("w:val"))
+
+
+def effective_paragraph_justification(p: Paragraph, doc: Document) -> str:
+    """
+    Best-effort resolution for paragraph justification:
+      1) direct pPr jc
+      2) paragraph style pPr jc
+      3) Normal style pPr jc
+      4) default "left"
+    """
+    v = _ppr_jc_value(p)
+    if v:
+        return _norm_jc(v)
+
+    def style_jc(style_obj) -> Optional[str]:
+        """
+        Read jc from a style's <w:pPr>.
+        """
+        try:
+            elm = style_obj._element
+        except Exception:
+            return None
+        pPr = elm.find(qn("w:pPr"))
+        if pPr is None:
+            return None
+        jc = pPr.find(qn("w:jc"))
+        if jc is None:
+            return None
+        return jc.get(qn("w:val"))
+
+    para_style = getattr(p, "style", None)
+    if para_style is not None:
+        v2 = style_jc(para_style)
+        if v2:
+            return _norm_jc(v2)
+
+    try:
+        normal_style = doc.styles["Normal"]
+        v3 = style_jc(normal_style)
+        if v3:
+            return _norm_jc(v3)
+    except Exception:
+        pass
+
+    return "left"
+
+
+# =============================================================================
+# SECTION 5: Run formatting (bold/italic + run character style)
+# =============================================================================
+#
+# A paragraph is broken into "runs". Each run can have its own formatting.
+#
+# python-docx gives run.bold and run.italic, but those can be None to indicate
+# "inherit". Effective formatting can be inherited from:
+#   run -> run style -> paragraph style -> Normal
+#
+# We implement a modest inheritance chain to get deterministic boolean values.
+# =============================================================================
+
+@dataclass(frozen=True)
+class RunFormat:
+    """
+    Computed (effective-ish) run formatting state.
+
+    bold/italic:
+      Concrete booleans after resolving inheritance (best effort).
+
+    rstyle:
+      Character style name applied to this run ("" if none).
+    """
+    bold: bool
+    italic: bool
+    rstyle: str
+
+
 def resolve_bool_chain(*vals: Optional[bool], default: bool = False) -> bool:
     """
-    Return the first non-None boolean from vals, else default.
+    Given values that might be None (meaning "inherit"),
+    return the first non-None value. If all are None, return default.
     """
     for v in vals:
         if v is not None:
@@ -218,8 +613,15 @@ def resolve_bool_chain(*vals: Optional[bool], default: bool = False) -> bool:
 
 def effective_run_format(run, para: Paragraph, doc: Document) -> RunFormat:
     """
-    Best-effort inheritance for bold/italic:
-      run.font -> run.style.font -> paragraph.style.font -> Normal.style.font -> default False
+    Best-effort run format resolution:
+      run.bold/italic ->
+      run.style.font.bold/italic ->
+      para.style.font.bold/italic ->
+      Normal.style.font.bold/italic ->
+      False
+
+    This will not cover *every* Word inheritance scenario, but it covers most
+    real-world documents well enough for a formatting-break stream.
     """
     run_style = getattr(run, "style", None)
     para_style = getattr(para, "style", None)
@@ -248,19 +650,48 @@ def effective_run_format(run, para: Paragraph, doc: Document) -> RunFormat:
     return RunFormat(bold=bold, italic=italic, rstyle=rstyle_name)
 
 
-# -----------------------------
-# Streaming emitter with state transitions
-# -----------------------------
+# =============================================================================
+# SECTION 6: Streaming state + marker emission logic
+# =============================================================================
+#
+# The core problem is: "insert a break each time formatting changes".
+# That is a streaming/differencing problem.
+#
+# We maintain a StreamState representing the currently-open markers
+# (bold, italic, run style) and the current paragraph/list/table context.
+#
+# Whenever we move to a new paragraph or a new run, we compare the new desired
+# format to the current state and emit END/START markers as necessary.
+# =============================================================================
 
 @dataclass
 class StreamState:
+    """
+    The full "current context" while traversing the document.
+
+    - in_table: nesting depth for tables (informational; not heavily used)
+    - pstyle/pjc: paragraph style name and justification
+    - in_list/list_*: for emitting LIST_START/LIST_END markers
+    - seen_num_ids: for continued list heuristic
+    - counters: numbering counters for actual item numbers
+    - bold/italic/rstyle: currently-open run markers
+    """
     in_table: int = 0
+
     # Paragraph context
     pstyle: str = ""
+    pjc: str = ""
+
+    # List context (for markers)
     in_list: bool = False
     list_kind: str = ""
     list_num_id: str = ""
     list_lvl: int = 0
+
+    # List tracking
+    seen_num_ids: Set[str] = None
+    counters: Dict[Tuple[str, int], int] = None  # (numId, ilvl) -> next number to emit
+
     # Run context
     bold: bool = False
     italic: bool = False
@@ -268,7 +699,14 @@ class StreamState:
 
 
 def close_run_markers(out, st: StreamState) -> None:
-    # Close in reverse “nested” order (style, italic, bold) for nicer symmetry.
+    """
+    Close any currently-open run-level markers in a deterministic order.
+
+    We close:
+      run style -> italic -> bold
+
+    The order isn't mandated by Word, but it's tidy and makes the output easy to parse.
+    """
     if st.rstyle:
         emit(out, f'[[RSTYLE_END name="{esc_attr(st.rstyle)}"]]')
         st.rstyle = ""
@@ -280,31 +718,20 @@ def close_run_markers(out, st: StreamState) -> None:
         st.bold = False
 
 
-def open_run_markers(out, st: StreamState, new_fmt: RunFormat) -> None:
-    # Open bold/italic then rstyle so the style “wraps” the content last.
-    if new_fmt.bold and not st.bold:
-        emit(out, "[[B_START]]")
-        st.bold = True
-    if new_fmt.italic and not st.italic:
-        emit(out, "[[I_START]]")
-        st.italic = True
-    if new_fmt.rstyle and new_fmt.rstyle != st.rstyle:
-        emit(out, f'[[RSTYLE_START name="{esc_attr(new_fmt.rstyle)}"]]')
-        st.rstyle = new_fmt.rstyle
-
-
 def switch_run_format(out, st: StreamState, new_fmt: RunFormat) -> None:
     """
-    Transition from current run formatting to new formatting by emitting END/START markers.
+    Transition from current run formatting (st) to the desired new formatting (new_fmt)
+    by emitting END/START markers only where needed.
+
+    This is the heart of the "break when formatting changes" requirement.
     """
-    # If rstyle changed, close old and open new.
+    # Handle character style change first (close old if different).
     if st.rstyle != new_fmt.rstyle:
         if st.rstyle:
             emit(out, f'[[RSTYLE_END name="{esc_attr(st.rstyle)}"]]')
         st.rstyle = ""
-        # (Re-open later after bold/italic transitions.)
 
-    # Close markers that must end
+    # Close markers that should end
     if st.italic and not new_fmt.italic:
         emit(out, "[[I_END]]")
         st.italic = False
@@ -312,7 +739,7 @@ def switch_run_format(out, st: StreamState, new_fmt: RunFormat) -> None:
         emit(out, "[[B_END]]")
         st.bold = False
 
-    # Open markers that must begin
+    # Open markers that should begin
     if new_fmt.bold and not st.bold:
         emit(out, "[[B_START]]")
         st.bold = True
@@ -320,55 +747,177 @@ def switch_run_format(out, st: StreamState, new_fmt: RunFormat) -> None:
         emit(out, "[[I_START]]")
         st.italic = True
 
-    # Now re-open rstyle if needed
+    # Open new character style if needed
     if new_fmt.rstyle and new_fmt.rstyle != st.rstyle:
         emit(out, f'[[RSTYLE_START name="{esc_attr(new_fmt.rstyle)}"]]')
         st.rstyle = new_fmt.rstyle
 
 
-def start_paragraph(out, st: StreamState, pstyle: str, li: Optional[ListInfo]) -> None:
-    # Close any lingering run markers from previous paragraph.
-    close_run_markers(out, st)
-    emit(out, "\n")  # paragraph break (even before markers) to visually separate blocks
+def emit_list_start(out, li: ListInfo, start_num: int, continued: bool) -> None:
+    """
+    Emit a LIST_START marker when we enter a new list instance (numId changes).
 
-    # List transitions
+    start_num:
+      Configured start for this list instance and level (from startOverride or start).
+    continued:
+      Heuristic: have we seen this numId earlier in traversal?
+    """
+    emit_line(
+        out,
+        f'[[LIST_START kind="{li.kind}" numId="{li.num_id}" start={start_num} continued="{str(continued).lower()}"]]'
+    )
+
+
+def emit_list_end(out, st: StreamState) -> None:
+    """
+    Emit LIST_END marker for the currently active list instance.
+    """
+    emit_line(out, f'[[LIST_END kind="{st.list_kind}" numId="{st.list_num_id}"]]')
+
+
+def ensure_counter_initialized(st: StreamState, num_id: str, ilvl: int, nm: NumberingModel) -> None:
+    """
+    Ensure st.counters contains an entry for (num_id, ilvl).
+    If missing, initialize it to the configured start number.
+    """
+    key = (num_id, ilvl)
+    if key not in st.counters:
+        st.counters[key] = list_configured_start(num_id, ilvl, nm)
+
+
+def reset_deeper_levels(st: StreamState, num_id: str, parent_lvl: int, nm: NumberingModel) -> None:
+    """
+    Common nested-list behavior:
+    When a parent level item increments, deeper levels usually restart.
+
+    Example (outline numbering):
+      1.
+         a.
+         b.
+      2.       <-- deeper levels typically restart for the new parent item
+         a.
+
+    We implement this by resetting counters for all (num_id, lvl) where lvl > parent_lvl
+    back to their configured start.
+    """
+    to_reset = [lvl for (nid, lvl) in st.counters.keys() if nid == num_id and lvl > parent_lvl]
+    for lvl in to_reset:
+        st.counters[(num_id, lvl)] = list_configured_start(num_id, lvl, nm)
+
+
+def next_item_number(st: StreamState, li: ListInfo, nm: NumberingModel) -> Optional[int]:
+    """
+    Compute the *actual* item number for this paragraph IF it's a numbered list item.
+
+    - If not numbered: return None.
+    - Else:
+        - read current counter
+        - emit that as item number
+        - increment counter for next time
+        - reset deeper levels
+
+    This produces a robust approximation of "what number would Word show"
+    for the numeric portion of the label.
+    """
+    if li.kind != "numbered":
+        return None
+
+    ensure_counter_initialized(st, li.num_id, li.ilvl, nm)
+
+    n = st.counters[(li.num_id, li.ilvl)]
+    st.counters[(li.num_id, li.ilvl)] = n + 1
+
+    reset_deeper_levels(st, li.num_id, li.ilvl, nm)
+
+    return n
+
+
+def start_paragraph(out, st: StreamState, pstyle: str, pjc: str, li: Optional[ListInfo], nm: NumberingModel) -> None:
+    """
+    Enter a paragraph:
+    - close any run markers still open from previous paragraph
+    - optionally emit LIST_END / LIST_START if list context changes
+    - compute list item number if needed
+    - emit P_START marker carrying paragraph context
+    """
+    close_run_markers(out, st)
+    emit(out, "\n")  # paragraph boundary as a blank line separator (improves readability)
+
     new_in_list = li is not None
-    if st.in_list and (not new_in_list or li is None):
-        emit_line(out, f'[[LIST_END kind="{st.list_kind}" numId="{st.list_num_id}"]]')
+
+    # If we were in a list and now are not, close the list marker.
+    if st.in_list and not new_in_list:
+        emit_list_end(out, st)
         st.in_list = False
         st.list_kind = ""
         st.list_num_id = ""
         st.list_lvl = 0
 
-    if new_in_list:
-        # Start list when entering a new list or changing list identity.
-        if (not st.in_list) or (st.list_num_id != li.num_id):
-            emit_line(out, f'[[LIST_START kind="{li.kind}" numId="{li.num_id}"]]')
+    # If we are in a list now, possibly start a new list marker if numId changes.
+    if new_in_list and li is not None:
+        need_new_list_marker = (not st.in_list) or (st.list_num_id != li.num_id)
+
+        if need_new_list_marker:
+            continued = li.num_id in st.seen_num_ids
+            st.seen_num_ids.add(li.num_id)
+
+            start_num = list_configured_start(li.num_id, li.ilvl, nm)
+            emit_list_start(out, li, start_num=start_num, continued=continued)
+
             st.in_list = True
             st.list_kind = li.kind
             st.list_num_id = li.num_id
             st.list_lvl = li.ilvl
         else:
+            # Same list instance, but level might have changed.
             st.list_lvl = li.ilvl
 
-    # Paragraph style transition (we mark each paragraph start explicitly)
+    # Store paragraph state
     st.pstyle = pstyle or ""
+    st.pjc = pjc or "inherit"
+
+    # Compute per-item number if this is a numbered list paragraph.
+    item_no = next_item_number(st, li, nm) if li is not None else None
+
+    # Emit P_START marker (one marker per paragraph, carrying all paragraph-level data)
     if li is not None:
-        emit_line(
-            out,
-            f'[[P_START style="{esc_attr(st.pstyle)}" list="{li.kind}" lvl={li.ilvl} fmt="{esc_attr(li.fmt)}"]]',
-        )
+        if item_no is not None:
+            emit_line(
+                out,
+                f'[[P_START style="{esc_attr(st.pstyle)}" jc="{esc_attr(st.pjc)}" '
+                f'list="{li.kind}" lvl={li.ilvl} fmt="{esc_attr(li.fmt)}" itemNo={item_no}]]'
+            )
+        else:
+            emit_line(
+                out,
+                f'[[P_START style="{esc_attr(st.pstyle)}" jc="{esc_attr(st.pjc)}" '
+                f'list="{li.kind}" lvl={li.ilvl} fmt="{esc_attr(li.fmt)}"]]'
+            )
     else:
-        emit_line(out, f'[[P_START style="{esc_attr(st.pstyle)}"]]' )
+        emit_line(out, f'[[P_START style="{esc_attr(st.pstyle)}" jc="{esc_attr(st.pjc)}"]]')
 
 
 def end_paragraph(out, st: StreamState) -> None:
+    """
+    End a paragraph:
+    - close any run markers that are still open
+    - emit P_END marker
+    """
     close_run_markers(out, st)
     emit_line(out, "[[P_END]]")
 
 
 def emit_paragraph_text(out, st: StreamState, doc: Document, p: Paragraph) -> None:
-    # Emit paragraph runs with run-level formatting transitions.
+    """
+    Emit the actual textual content of a paragraph.
+
+    We stream over runs in order. For each run:
+      - compute effective formatting
+      - switch marker state as needed
+      - emit the run text
+
+    This guarantees that formatting changes are reflected by explicit markers.
+    """
     for run in p.runs:
         txt = run.text
         if not txt:
@@ -376,14 +925,18 @@ def emit_paragraph_text(out, st: StreamState, doc: Document, p: Paragraph) -> No
 
         new_fmt = effective_run_format(run, p, doc)
         switch_run_format(out, st, new_fmt)
-
-        # Emit the actual text as-is. (You could normalize whitespace if desired.)
         emit(out, txt)
 
 
-def emit_table(out, st: StreamState, doc: Document, table: Table,
-               numId_to_abstractId, abstractId_to_lvlFmt) -> None:
-    # Enter table
+def emit_table(out, st: StreamState, doc: Document, table: Table, nm: NumberingModel) -> None:
+    """
+    Emit a table structure including:
+      - TABLE_START / TABLE_END
+      - ROW_START / ROW_END
+      - CELL_START / CELL_END
+
+    And recursively emit the content inside each cell (paragraphs + nested tables).
+    """
     close_run_markers(out, st)
     emit_line(out, "[[TABLE_START]]")
     st.in_table += 1
@@ -393,16 +946,19 @@ def emit_table(out, st: StreamState, doc: Document, table: Table,
         for c_i, cell in enumerate(row.cells):
             emit_line(out, f"[[CELL_START r={r_i} c={c_i}]]")
 
-            # Each cell can contain paragraphs and nested tables.
+            # A cell can contain multiple paragraphs and nested tables.
             for block in iter_block_items(cell):
                 if isinstance(block, Paragraph):
                     pstyle = _style_name(block.style)
-                    li = paragraph_list_info(block, numId_to_abstractId, abstractId_to_lvlFmt)
-                    start_paragraph(out, st, pstyle, li)
+                    pjc = effective_paragraph_justification(block, doc)
+                    li = paragraph_list_info(block, nm)
+
+                    start_paragraph(out, st, pstyle, pjc, li, nm)
                     emit_paragraph_text(out, st, doc, block)
                     end_paragraph(out, st)
                 else:
-                    emit_table(out, st, doc, block, numId_to_abstractId, abstractId_to_lvlFmt)
+                    # Nested table inside a cell.
+                    emit_table(out, st, doc, block, nm)
 
             emit_line(out, f"[[CELL_END r={r_i} c={c_i}]]")
         emit_line(out, f"[[ROW_END r={r_i}]]")
@@ -411,54 +967,71 @@ def emit_table(out, st: StreamState, doc: Document, table: Table,
     emit_line(out, "[[TABLE_END]]")
 
 
-def process_document(docx_path: str, out) -> None:
-    doc = Document(docx_path)
-    numId_to_abstractId, abstractId_to_lvlFmt = build_numbering_maps(doc)
+# =============================================================================
+# SECTION 7: High-level document traversal
+# =============================================================================
 
-    st = StreamState()
+def process_document(docx_path: str, out) -> None:
+    """
+    Main processing function:
+      - load the .docx
+      - build numbering model
+      - traverse blocks in order
+      - emit markers + text
+    """
+    doc = Document(docx_path)
+    nm = build_numbering_model(doc)
+
+    # Initialize stream state with empty list-tracking and counters.
+    st = StreamState(seen_num_ids=set(), counters={})
 
     emit_line(out, f'[[DOC_START path="{esc_attr(docx_path)}"]]')
     for block in iter_block_items(doc):
         if isinstance(block, Paragraph):
             pstyle = _style_name(block.style)
-            li = paragraph_list_info(block, numId_to_abstractId, abstractId_to_lvlFmt)
-            start_paragraph(out, st, pstyle, li)
+            pjc = effective_paragraph_justification(block, doc)
+            li = paragraph_list_info(block, nm)
+
+            start_paragraph(out, st, pstyle, pjc, li, nm)
             emit_paragraph_text(out, st, doc, block)
             end_paragraph(out, st)
         else:
-            emit_table(out, st, doc, block, numId_to_abstractId, abstractId_to_lvlFmt)
+            emit_table(out, st, doc, block, nm)
 
-    # Close list if still open at end of document
+    # If the document ends while we're inside a list marker, close it.
     if st.in_list:
-        emit_line(out, f'[[LIST_END kind="{st.list_kind}" numId="{st.list_num_id}"]]')
+        emit_list_end(out, st)
         st.in_list = False
 
+    # Close any lingering run markers (paranoia / correctness)
     close_run_markers(out, st)
     emit_line(out, "[[DOC_END]]")
 
 
-# -----------------------------
-# CLI
-# -----------------------------
+# =============================================================================
+# SECTION 8: CLI entrypoint
+# =============================================================================
 
 def main(argv: List[str]) -> int:
+    """
+    Command line interface.
+
+    We keep the script CLI-friendly:
+      docx_format_breaks.commentary.py input.docx
+      docx_format_breaks.commentary.py input.docx -o out.txt
+    """
     ap = argparse.ArgumentParser(
-        description="Emit Word document text with START/END markers when formatting changes."
+        description="Emit Word .docx text with explicit formatting markers (incl. justification + actual list item numbers)."
     )
     ap.add_argument("docx", help="Input .docx file path")
-    ap.add_argument(
-        "-o", "--output", default="",
-        help="Optional output file path. If omitted, prints to stdout."
-    )
+    ap.add_argument("-o", "--output", default="", help="Optional output file path (defaults to stdout).")
     args = ap.parse_args(argv)
 
     if args.output:
         with open(args.output, "w", encoding="utf-8") as f:
             process_document(args.docx, f)
     else:
-        # Use stdout with utf-8 where possible
-        out = sys.stdout
-        process_document(args.docx, out)
+        process_document(args.docx, sys.stdout)
 
     return 0
 

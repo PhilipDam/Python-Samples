@@ -1,0 +1,68 @@
+[[DOC_START path="word_test.docx"]]
+
+[[P_START style="Heading 1" jc="center"]]
+[[RSTYLE_START name="Default Paragraph Font"]]Overskrift (centreret)[[RSTYLE_END name="Default Paragraph Font"]][[P_END]]
+
+[[P_START style="Normal" jc="left"]]
+[[P_END]]
+
+[[P_START style="Normal" jc="left"]]
+[[RSTYLE_START name="Default Paragraph Font"]]Denne tekst er så skrevet i normal style, dog med [[B_START]]afbrydelser[[B_END]] i form af bold, [[I_START]]italic[[I_END]], og [[B_START]][[I_START]]kombinationer[[I_END]][[B_END]] heraf. Vel tilbage i normal style, forsøger vi os så med [[RSTYLE_END name="Default Paragraph Font"]][[RSTYLE_START name="Overskrift 2 Tegn"]]skift i style[[RSTYLE_END name="Overskrift 2 Tegn"]][[RSTYLE_START name="Default Paragraph Font"]] midt i en tekst.[[RSTYLE_END name="Default Paragraph Font"]][[P_END]]
+
+[[P_START style="Normal" jc="left"]]
+[[RSTYLE_START name="Default Paragraph Font"]]Her har vi så startet en ny paragraf, som indeholder to forskellige listetyper:[[RSTYLE_END name="Default Paragraph Font"]][[P_END]]
+
+[[P_START style="Normal" jc="left"]]
+[[P_END]]
+
+[[LIST_START kind="bullet" numId="1" start=1 continued="false"]]
+[[P_START style="List Paragraph" jc="left" list="bullet" lvl=0 fmt="bullet"]]
+[[RSTYLE_START name="Default Paragraph Font"]]Vigtigt område[[RSTYLE_END name="Default Paragraph Font"]][[P_END]]
+
+[[P_START style="List Paragraph" jc="left" list="bullet" lvl=0 fmt="bullet"]]
+[[RSTYLE_START name="Default Paragraph Font"]]Et andet vigtigt område[[RSTYLE_END name="Default Paragraph Font"]][[P_END]]
+
+[[LIST_END kind="bullet" numId="1"]]
+[[P_START style="Normal" jc="left"]]
+[[P_END]]
+
+[[P_START style="Normal" jc="left"]]
+[[RSTYLE_START name="Default Paragraph Font"]]Hertil også en nummereret udgave i to grupper:[[RSTYLE_END name="Default Paragraph Font"]][[P_END]]
+
+[[P_START style="Normal" jc="left"]]
+[[P_END]]
+
+[[LIST_START kind="numbered" numId="2" start=1 continued="false"]]
+[[P_START style="List Paragraph" jc="left" list="numbered" lvl=0 fmt="decimal" itemNo=1]]
+[[RSTYLE_START name="Default Paragraph Font"]]Højeste prioritet[[RSTYLE_END name="Default Paragraph Font"]][[P_END]]
+
+[[P_START style="List Paragraph" jc="left" list="numbered" lvl=0 fmt="decimal" itemNo=2]]
+[[RSTYLE_START name="Default Paragraph Font"]]Næsthøjeste prioritet[[RSTYLE_END name="Default Paragraph Font"]][[P_END]]
+
+[[LIST_END kind="numbered" numId="2"]]
+[[P_START style="Normal" jc="left"]]
+[[P_END]]
+
+[[P_START style="Normal" jc="left"]]
+[[RSTYLE_START name="Default Paragraph Font"]]Og her forsætter listen så over prioriterede opgaver:[[RSTYLE_END name="Default Paragraph Font"]][[P_END]]
+
+[[P_START style="Normal" jc="left"]]
+[[P_END]]
+
+[[LIST_START kind="numbered" numId="2" start=1 continued="true"]]
+[[P_START style="List Paragraph" jc="left" list="numbered" lvl=0 fmt="decimal" itemNo=3]]
+[[RSTYLE_START name="Default Paragraph Font"]]En anden vigtig opgave[[RSTYLE_END name="Default Paragraph Font"]][[P_END]]
+
+[[P_START style="List Paragraph" jc="left" list="numbered" lvl=0 fmt="decimal" itemNo=4]]
+[[RSTYLE_START name="Default Paragraph Font"]]Laveste prioritet[[RSTYLE_END name="Default Paragraph Font"]][[P_END]]
+
+[[LIST_END kind="numbered" numId="2"]]
+[[P_START style="Intense Quote" jc="center"]]
+[[I_START]][[RSTYLE_START name="Default Paragraph Font"]]I mangel af bedre anvendes så en speciel style (i stedet for billede)[[RSTYLE_END name="Default Paragraph Font"]][[I_END]][[P_END]]
+
+[[P_START style="Normal" jc="left"]]
+[[RSTYLE_START name="Default Paragraph Font"]]Og så kører vi videre i normal tekst, hvor vi så afslutter dokumentet.[[RSTYLE_END name="Default Paragraph Font"]][[P_END]]
+
+[[P_START style="Normal" jc="left"]]
+[[P_END]]
+[[DOC_END]]
