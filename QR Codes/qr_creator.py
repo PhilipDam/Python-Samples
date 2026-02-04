@@ -15,8 +15,8 @@ img = qr.make_image(
     module_drawer=CircleModuleDrawer(),      # “points”
     eye_drawer=RoundedModuleDrawer(),        # finder patterns (“eyes”)
     color_mask=SolidFillColorMask(
-        back_color=(255, 255, 255),
-        front_color=(0, 0, 0),
+        back_color=(239, 246, 230),
+        front_color=(0, 0, 192),
     ),
     embedded_image_path="logo.png",
 )
