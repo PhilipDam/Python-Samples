@@ -1,3 +1,8 @@
+
+#
+# Remember to execute: pip install "qrcode[pil]"
+#
+
 import qrcode
 from qrcode.image.styledpil import StyledPilImage
 from qrcode.image.styles.moduledrawers import CircleModuleDrawer
