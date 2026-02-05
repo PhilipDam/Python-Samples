@@ -92,8 +92,8 @@ pip install python-docx
 
 USAGE
 -----
-python docx_format_breaks.commentary.py input.docx > out.txt
-python docx_format_breaks.commentary.py input.docx -o out.txt
+python word_reader.py input.docx > out.txt
+python word_reader.py input.docx -o out.txt
 
 ================================================================================
 """
@@ -487,6 +487,57 @@ def _style_name(style) -> str:
     except Exception:
         return ""
 
+def _style_id_from_style_obj(style) -> str:
+    """Return style.style_id, or ""."""
+    try:
+        return getattr(style, "style_id", "") or ""
+    except Exception:
+        return ""
+
+
+def paragraph_style_name(p: Paragraph, doc: Document) -> str:
+    """Robustly resolve a paragraph's *display* style name."""
+    try:
+        if getattr(p, "style", None) is not None and p.style.name:
+            return p.style.name
+    except Exception:
+        pass
+    try:
+        pPr = p._p.pPr
+        if pPr is not None and pPr.pStyle is not None and pPr.pStyle.val is not None:
+            sid = str(pPr.pStyle.val)
+            try:
+                return doc.styles[sid].name or sid
+            except Exception:
+                return sid
+    except Exception:
+        pass
+    return ""
+
+
+def run_character_style_name(run, doc: Document) -> str:
+    """Robustly resolve a run's character style name (if any)."""
+    try:
+        rs = getattr(run, "style", None)
+        if rs is not None and rs.name:
+            return rs.name
+    except Exception:
+        pass
+    try:
+        rPr = run._r.rPr
+        if rPr is not None:
+            rStyle = rPr.find(qn("w:rStyle"))
+            if rStyle is not None:
+                sid = rStyle.get(qn("w:val")) or ""
+                if sid:
+                    try:
+                        return doc.styles[sid].name or sid
+                    except Exception:
+                        return sid
+    except Exception:
+        pass
+    return ""
+
 
 def _norm_jc(val: Optional[str]) -> str:
     """
@@ -646,7 +697,11 @@ def effective_run_format(run, para: Paragraph, doc: Document) -> RunFormat:
         default=False,
     )
 
-    rstyle_name = _style_name(run_style)
+    rstyle_name = run_character_style_name(run, doc)
+    # Word often assigns 'Default Paragraph Font' as the implicit run style.
+    # It is not helpful as a semantic marker, so suppress it.
+    if rstyle_name == "Default Paragraph Font":
+        rstyle_name = ""
     return RunFormat(bold=bold, italic=italic, rstyle=rstyle_name)
 
 
@@ -949,7 +1004,7 @@ def emit_table(out, st: StreamState, doc: Document, table: Table, nm: NumberingM
             # A cell can contain multiple paragraphs and nested tables.
             for block in iter_block_items(cell):
                 if isinstance(block, Paragraph):
-                    pstyle = _style_name(block.style)
+                    pstyle = paragraph_style_name(block, doc)
                     pjc = effective_paragraph_justification(block, doc)
                     li = paragraph_list_info(block, nm)
 
@@ -988,7 +1043,7 @@ def process_document(docx_path: str, out) -> None:
     emit_line(out, f'[[DOC_START path="{esc_attr(docx_path)}"]]')
     for block in iter_block_items(doc):
         if isinstance(block, Paragraph):
-            pstyle = _style_name(block.style)
+            pstyle = paragraph_style_name(block, doc)
             pjc = effective_paragraph_justification(block, doc)
             li = paragraph_list_info(block, nm)
 

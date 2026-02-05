@@ -1,0 +1,287 @@
+[[DOC_START path="word_test.docx"]]
+
+[[P_START style="2-Art" jc="left"]]
+Appens opbygning og funktioner[[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+[[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+Når appen åbner, får du vist et system i tre lag:[[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+[[B_START]]Familie [[B_END]]opdeler fuglene alfabetisk og i familiegrupper. Herfra kan du klikke dig videre til fx;[[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+[[B_START]]Duer[[B_END]], som viser de arter af duer, der kan træffes i haven.  Herfra kan du klikke videre til; [[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+[[B_START]]Arter[[B_END]], som viser dig fotos, beskrivelse og stemmer. [[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+[[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+Ønsker du at finde en bestemt stemme eller en fugl er der flere muligheder:[[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+[[P_END]]
+
+[[LIST_START kind="bullet" numId="3" start=1 continued="false"]]
+[[P_START style="1-Normal" jc="left" list="bullet" lvl=0 fmt="bullet"]]
+[[B_START]]Søg:[[B_END]] Her kan du finde en stemme ved at søge på en at de opstillede kategorier for sang. Søgekriterierne matcher alle sangstemmer og nogle kald. Hvis du for eksempel søger på kriteriet [[B_START]]Blød[[B_END]], finder du blandt andre, solsortens bløde sang. 
+
+Du kan også kombinere flere kategorier, hvis du er usikker. Hvis du søger på kriterierne Kort + Kvidrende/trillende vil du få en liste op med bl.a. mejser og Lille korsnæb. Her kan du så finde frem til arten ud fra udseende eller ved at afspille de forskellige stemmer.
+
+[[B_START]]Bemærkninger til kald[[B_END]] At opstille søgekriterier der præcist matcher alle de forskellige og meget variable kald er umuligt. Vi anbefaler derfor, at du lærer disse ved at afspille de opdelte og beskrevne kald under arten.[[P_END]]
+
+[[LIST_END kind="bullet" numId="3"]]
+[[P_START style="1-Normal" jc="left"]]
+[[P_END]]
+
+[[LIST_START kind="bullet" numId="3" start=1 continued="true"]]
+[[P_START style="1-Normal" jc="left" list="bullet" lvl=0 fmt="bullet"]]
+[[B_START]]Søg:[[B_END]] Kan også hjælpe dig med at finde fugle, ud fra deres udseende. Søg på fuglens primære farver fx sort + hvid. Du får da en liste med arter med sort/hvide fjerdragter, såsom Hvid Vipstjert, Broget fluesnapper og Blishøne. 
+[[P_END]]
+
+[[P_START style="1-Normal" jc="left" list="bullet" lvl=0 fmt="bullet"]]
+[[B_START]]Indeks:[[B_END]] Her får du en alfabetisk oversigt over alle arter i appen.[[P_END]]
+
+[[LIST_END kind="bullet" numId="3"]]
+[[P_START style="1-Normal" jc="left"]]
+[[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+[[P_END]]
+
+[[P_START style="3-Overskrift" jc="left"]]
+I appen bruges følgende ikoner:[[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+[[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+I højre hjørne øverst i skærmbilledet ses tre streger.[[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+[[P_END]]
+
+[[P_START style="4-Billede" jc="left"]]
+[[I_START]]Menu.Icon.menu.png[[I_END]][[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+[[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+Ved at klikke på dette ikon fremkommer en menu, der indeholder baggrundsinformationer om app’en, som tips til brug af app’ens funktioner.[[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+[[P_END]]
+
+[[P_START style="3-Overskrift" jc="left"]]
+I værktøjslinjen under billedet i artsbeskrivelsen ses:[[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+[[P_END]]
+
+[[P_START style="4-Billede" jc="left"]]
+[[I_START]]Menu.Icon.foto.png[[I_END]][[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+[[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+Til venstre ses en stak [[B_START]]overlappende billedikoner[[B_END]]. Ved at klikke på dette ikon får du illustrationer af fuglen frem, som ved klik kan forstørres til fuld skærmstørrelse. Det er også muligt at zoome i billedet for at se detaljer (træk i billedet med fingrene) og at swipe til næste illustration (hvis der er mere end en).[[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+[[P_END]]
+
+[[P_START style="4-Billede" jc="left"]]
+[[I_START]]Menu.Icon.ok.png[[I_END]][[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+[[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+Til højre ses en [[B_START]]rund cirkel[[B_END]]. Ved at klikke på denne indsættes et [[B_START]]flueben[[B_END]] eller checkmark som indikerer at arten er set. Fuglen bliver samtidig registreret med et [[B_START]]flueben[[B_END]] i Indekset.[[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+[[P_END]]
+
+[[P_START style="3-Overskrift" jc="left"]]
+I notelinjen under værktøjslinjen[[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+[[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+Efter teksten [[B_START]]Noter[[B_END]] er der angivet, hvor mange noter der er oprettet for arten. Ved klik vises listen over de noter der er oprettet under denne art. [[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+[[P_END]]
+
+[[P_START style="4-Billede" jc="left"]]
+[[I_START]]Menu.Icon.newnote.png[[I_END]][[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+[[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+Ved at klikke på dette ikon får du mulighed for at skrive en note, som bliver tilføjet et kartotek af noter, der altid kan redigeres og deles.[[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+[[P_END]]
+
+[[P_START style="4-Billede" jc="left"]]
+[[I_START]]Menu.Icon.bookmark.png[[I_END]][[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+[[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+Ved at klikke på dette ikon kan du tilføje en art til en tur oprettet under Mine ture. (se ikon med [[B_START]]Vandringsmand[[B_END]], nedenfor).[[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+[[P_END]]
+
+[[P_START style="4-Billede" jc="left"]]
+[[I_START]]Menu.Icon.Hiking.png[[I_END]][[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+[[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+Ved at klikke på dette ikon får du mulighed for at oprette en tur og tilknytte de fugle du har set. Under ikonet lagres samtlige oprettede ture med tilknyttede arter. Du kan oprette en ny tur ved at klikke på [[B_START]]+ [[B_END]]ikonet øverst i højre hjørne af skærmbilledet.[[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+[[B_START]]Bemærk[[B_END]] at du, for at tilknytte en art til din tur, skal finde arten i artsbeskrivelsen, klikke på [[B_START]]Faneblad[[B_END]], markere turen og derefter klikke på [[B_START]]flueben,[[B_END]] for at tilknytte arten til turen.[[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+[[B_START]]Bemærk [[B_END]]også,[[B_START]] [[B_END]]at du ved klik på ikonet for del/share altid kan dele din turliste med andre via SMS og mail.[[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+[[P_END]]
+
+[[P_START style="3-Overskrift" jc="left"]]
+Pile-linje[[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+[[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+Nederst i teksten af artsbeskrivelsen finder du en linje med henholdsvis en venstre- og en højre pil, som gør det muligt at bladre frem og tilbage mellem de nærmeste slægtninge på arts-niveau. [[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+[[P_END]]
+
+[[P_START style="3-Overskrift" jc="left"]]
+I værktøjslinjen i bunden af skærmbilledet ses følgende:[[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+[[P_END]]
+
+[[P_START style="4-Billede" jc="left"]]
+[[I_START]]Menu.Icon.hjem.png[[I_END]][[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+[[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+[[B_START]]Hjem:[[B_END]] fører dig tilbage til startskærmen, der viser fuglene opdelt i familier.[[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+[[P_END]]
+
+[[P_START style="4-Billede" jc="left"]]
+[[I_START]]Menu.Icon.lup.png[[I_END]][[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+[[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+Find den ønskede Stemme/fugl ud fra artens sang/kald og farver.[[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+[[P_END]]
+
+[[P_START style="4-Billede" jc="left"]]
+[[I_START]]Menu.Icon.indeks.png[[I_END]][[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+[[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+[[B_START]]Indeks[[B_END]] er en alfabetisk liste over samtlige arter og artsbeskrivelser.[[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+[[P_END]]
+
+[[P_START style="4-Billede" jc="left"]]
+[[I_START]]Menu.icon.tavle.png[[I_END]][[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+[[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+[[B_START]]Tavler[[B_END]] Funktionen er ikke tilgængelig i denne app. [[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+Bruges i flere af Wacabangas andre apps fx til opstilling af lignende arter og oversigter. [[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+[[P_END]]
+
+[[P_START style="4-Billede" jc="left"]]
+[[I_START]]Menu.Icon.note.png[[I_END]][[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+[[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+[[B_START]]Noter[[B_END]], viser dit arkiv med noter.[[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+[[P_END]]
+
+[[P_START style="3-Overskrift" jc="left"]]
+Øvrige ikoner:[[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+[[P_END]]
+
+[[P_START style="4-Billede" jc="left"]]
+[[I_START]]Menu.Icon.plus.png[[I_END]][[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+[[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+Ved klik på ikonet, [[B_START]]Vandringsmand[[B_END]], ses der et [[B_START]]+[[B_END]] til venstre for Menu-ikonet, øverst i højre hjørne af skærmbilledet. Dette ikon giver dig mulighed for at oprette ture og tilknytte hvilke arter du har set. [[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+[[P_END]]
+
+[[P_START style="4-Billede" jc="left"]]
+[[I_START]]Menu.Icon.share.png[[I_END]][[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+[[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+[[B_START]]Dele funktion[[B_END]], som findes under [[B_START]]Noter[[B_END]], giver dig mulighed for at dele dine noter på andre medier.[[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+[[P_END]]
+
+[[P_START style="4-Billede" jc="left"]]
+[[I_START]]Menu.Icon.redo.png[[I_END]][[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+[[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+Ved at klikke på dette ikon, sletter du dine valg fra sidste søgning og kan nu starte en ny søgning.[[P_END]]
+
+[[P_START style="1-Normal" jc="left"]]
+[[P_END]]
+[[DOC_END]]
