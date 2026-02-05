@@ -7,13 +7,10 @@ Small command-line app that detects and decodes QR codes in images using OpenCV.
 Usage examples:
 
     # Basic: read and print QR content
-    python qr_reader.py qr_sample_1.png
-
-    # Show the annotated image in a window
-    python qr_reader.py qr_sample_1.png --show
+    python3 qr_reader.py qr.png
 
     # Save an annotated copy of the image
-    python qr_reader.py qr_sample_1.png --save-annotated annotated_qr.png
+    python3 qr_reader.py qr.png --save-annotated annotated_qr.png
 
 Requirements:
     - Python 3.x
@@ -41,9 +38,6 @@ def read_qr_from_image(
     ----------
     image_path : str
         Path to the input image file (PNG, JPG, etc.)
-    show : bool, optional
-        If True, display the image with any detected QR codes highlighted
-        in an OpenCV window.
     save_annotated : bool, optional
         If True, save an annotated copy of the image (with QR bounding box)
         to 'annotated_output_path' (or a default name if not provided).
