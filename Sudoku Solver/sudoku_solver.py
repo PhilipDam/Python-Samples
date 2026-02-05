@@ -1,74 +1,344 @@
 #!/usr/bin/env python3
 """
-Sudoku Solver (Deduction-First, then Guessing) — FULL VERBOSE VERSION
+Sudoku Solver (Deduction-First, then Guessing)
 
-This file is deliberately “teaching code”: heavy comments, explicit reasoning,
-and (as requested) *very verbose logging*.
+This file is intentionally *heavily commented* and its header is a mini “field guide”
+to the techniques implemented below. The actual code mirrors these explanations.
 
-WHAT IT PRINTS (ALL MOVES)
---------------------------
-For every usable action the solver applies, it prints:
+------------------------------------------------------------------------------
+DATA MODEL USED BY THIS SOLVER
+------------------------------------------------------------------------------
 
-  1) What happened:
-       - a placement:   "Place D at rXcY"
-       - an elimination:"Eliminate D from rXcY"
+We represent a Sudoku state with:
 
-  2) Why it is valid (a human-readable explanation of the technique).
+  - grid[i] : the placed digit at cell i (0 means empty)
+  - cand[i] : a set of candidate digits still possible in cell i
 
-Additionally (this is the big upgrade):
----------------------------------------
-Every time we PLACE a digit, we also print *every peer-elimination* caused by
-that placement:
+Cell indices are 0..80. We map:
+  i = r*9 + c   with r,c in 0..8.
 
-  - If we place digit D in a cell, then every peer cell (same row/col/box)
-    cannot contain D, so we remove candidate D from those peer cells.
+Constraints:
+  - Each row, column, and 3x3 box must contain digits 1..9 exactly once.
 
-This includes placements coming from:
-  - the named deduction techniques
-  - propagation (forced singles)
-  - guessing / trial branches
+We precompute:
+  - UNITS = 27 units (9 rows, 9 cols, 9 boxes)
+  - PEERS[i] = all cells sharing row/col/box with i (excluding i)
 
-This is extremely verbose. A typical solve can produce thousands of lines.
-If you ever want less output, set PRINT_PEER_ELIMINATIONS=False.
+After *any* change (placement or elimination), we propagate “forced singles”:
+  - If any empty cell has only one candidate left, it must be placed.
+This propagation is not counted as a separate technique step in the printed output,
+because it is a mechanical consequence of any deduction.
 
-SOLVING STRATEGY
-----------------
-We repeatedly apply deduction techniques in a fixed order. As soon as a technique
-finds a usable action, we apply it, print it, and restart the technique list.
+------------------------------------------------------------------------------
+SOLVING STRATEGY (VERY IMPORTANT)
+------------------------------------------------------------------------------
 
-If no deduction technique makes progress, we switch to Guessing (backtracking):
-  - choose an empty cell with the fewest candidates (MRV heuristic)
-  - try each candidate recursively
+The solver runs in a loop:
 
-TECHNIQUES IMPLEMENTED (in order)
----------------------------------
-  1) Naked Singles
-  2) Hidden Singles
-  3) Naked Pairs/Twins
-  4) Hidden Pairs
-  5) Naked Triples
-  6) Naked Quads
-  7) Hidden Triples
-  8) Hidden Quads
-  9) Pointing Pairs/Triples
- 10) Box/Line Reduction (Claiming)
- 11) X-Wing
- 12) Swordfish
- 13) XYZ-Wing
- 14) Coloring (two-coloring on strong links)
- 15) Chains (AIC – limited digit-focused, bounded depth)
- 16) Forcing Chains (contradiction probing on 2–3 candidate cells)
- 17) Unique Rectangle (UR Type 1)
- 18) Guessing (Trial & Error / Backtracking)
+  1) Recompute / maintain candidates.
+  2) Apply techniques in a fixed order.
+  3) As soon as a technique finds a usable action:
+       - print the action (place or eliminate)
+       - explain why it is valid
+       - apply it
+       - restart from the top of the technique list
 
-Input format
-------------
-Provide either:
-- an 81-character string (digits 1-9, '.' or '0' for blanks), OR
-- 9 lines of 9 characters (spaces ignored).
+If none of the deduction techniques produces progress, we fall back to
+Guessing (Trial & Error) using recursive backtracking — but still “deduction-first”
+inside each guess branch.
 
-Example:
-  python sudoku_solver.py "53..7....6..195....98....6.8...6...34..8..6...2...3.6....28....419..5....8..79"
+------------------------------------------------------------------------------
+TECHNIQUE FIELD GUIDE (what each one does + how the algorithm detects it)
+------------------------------------------------------------------------------
+
+1) NAKED SINGLES
+   Idea:
+     If a cell has only one candidate left, it must be that digit.
+
+   Detection:
+     Scan all cells:
+       if grid[cell]==0 and len(cand[cell])==1 -> place that digit.
+
+   Why it works:
+     All other digits are already excluded by row/col/box constraints.
+
+2) HIDDEN SINGLES
+   Idea:
+     Even if a cell has multiple candidates, a digit might have only one possible
+     location within a unit (row/col/box). That location must take the digit.
+
+   Detection:
+     For each unit:
+       build positions[d] = list of cells in the unit that allow digit d.
+       If positions[d] has length 1 -> place d there.
+
+   Why it works:
+     The digit must appear somewhere in the unit; if only one place allows it,
+     that place is forced.
+
+3) NAKED PAIRS / TWINS
+   Idea:
+     In a unit, if exactly two cells have exactly the same two candidates {a,b},
+     then those two digits must occupy those two cells in some order. Therefore,
+     no other cell in that unit can contain a or b.
+
+   Detection:
+     For each unit:
+       collect all cells with exactly 2 candidates.
+       group them by their candidate pair.
+       if a pair {a,b} occurs in exactly 2 cells:
+           eliminate a and b from all other cells in the unit.
+
+   Why it works:
+     Those two digits must be used somewhere; the only two places are those two
+     cells, so they “reserve” the digits.
+
+4) HIDDEN PAIRS
+   Idea:
+     In a unit, if two digits (a,b) can appear only in the same two cells, then
+     those two cells must contain {a,b} (in some order). Any other candidates in
+     those cells can be removed.
+
+   Detection:
+     For each unit:
+       positions[d] = candidate locations for digit d.
+       find digits a,b such that positions[a]==positions[b] and len==2.
+       then, in those two cells, eliminate candidates not in {a,b}.
+
+   Why it works:
+     The unit must place a and b somewhere; if there are exactly two shared spots,
+     those spots are dedicated to them.
+
+5) NAKED TRIPLES / QUADS (general “Naked k-tuple”)
+   Idea:
+     In a unit, if k cells together contain only k distinct candidates total,
+     then those k digits must occupy those k cells (in some order). Remove those
+     digits from other cells in the unit.
+
+   Detection (general k):
+     For each unit:
+       choose combinations of k cells (usually those with <=k candidates).
+       compute union of their candidate sets.
+       if union size == k:
+           eliminate those union digits from other cells in unit.
+
+   Why it works:
+     It’s the same “reservation” logic as naked pairs, but generalized.
+
+6) HIDDEN TRIPLES / QUADS (general “Hidden k-tuple”)
+   Idea:
+     In a unit, if k digits can only appear in exactly k cells (their possible
+     locations union to k cells), then those k cells must contain those digits.
+     Therefore remove other candidates from those cells.
+
+   Detection:
+     For each unit:
+       positions[d] = candidate locations for digit d.
+       pick digit combinations of size k.
+       if union(positions[d]) has size k:
+           in those k cells, eliminate candidates not among the k digits.
+
+   Why it works:
+     Those digits have nowhere else to go in the unit, so the k cells are “claimed”.
+
+7) POINTING PAIRS / TRIPLES
+   Idea:
+     Inside a 3x3 box, if all candidates of digit d lie in one row (or one column),
+     then d cannot appear in that row (or column) outside the box.
+
+   Detection:
+     For each box and digit d:
+       collect candidate cells for d in the box.
+       if all are in the same row:
+           eliminate d from that row outside the box.
+       similarly for same column.
+
+   Why it works:
+     The box must place d somewhere; if the only places are on a single row segment,
+     then the row outside the box cannot also contain d.
+
+8) BOX/LINE REDUCTION (CLAIMING)
+   Idea:
+     The inverse of pointing:
+     If in a row (or column), all candidates of digit d are confined to one box,
+     then within that box, cells outside the row (or column) cannot contain d.
+
+   Detection:
+     For each row and digit d:
+       locs = positions of d in that row.
+       if all locs are in the same box:
+           eliminate d from the rest of that box (outside the row).
+     Similarly for columns.
+
+   Why it works:
+     If the row must place d somewhere and all spots are in one box, then that box
+     must place d within the row segment, forbidding other cells in the box.
+
+9) X-WING
+   Idea:
+     A rectangle-based fish pattern for a digit d.
+     If two rows each have candidate d in exactly the same two columns, then d must
+     occupy those corners in some arrangement, so in those columns, d can be removed
+     from all other rows (and vice versa using columns).
+
+   Detection (row-based):
+     For each digit d:
+       for each row r, record the set of columns where d is a candidate.
+       if a row has exactly 2 such columns, keep it.
+       find two rows with identical {c1,c2}.
+       then eliminate d from (all other rows) in columns c1,c2.
+
+   Why it works:
+     In each of the two rows, d must appear in one of the two columns.
+     If some other row also used d in the same columns, it would force duplicates.
+
+10) SWORDFISH
+   Idea:
+     Like X-Wing but with 3 rows and 3 columns:
+     If for digit d, three rows’ candidate columns occupy only 3 columns total
+     (and each row uses 2-3 of those), then those columns must contain the digit
+     in those 3 rows, so remove d from those columns in other rows.
+     (And symmetric column-based.)
+
+   Detection (row-based):
+     For each digit d:
+       select rows where d appears in 2 or 3 columns.
+       test all triples of such rows:
+         if union of their columns has size exactly 3:
+            eliminate d from those 3 columns outside those rows.
+
+   Why it works:
+     Those three rows must place the digit somewhere, and there are only 3 columns
+     available across them, constraining the digit to those intersections.
+
+11) XYZ-WING
+   Idea:
+     A 3-cell pattern involving a pivot P with {x,y,z} and two wings:
+       A sees P and has {x,y}
+       B sees P and has {x,z}
+     The wings share z as the “common” digit that becomes eliminatable in any cell
+     that sees BOTH wings.
+
+   Detection:
+     - Find pivot cells with 3 candidates.
+     - Find two bivalue peers that are subsets of pivot candidates, with intersection size 1 (z).
+     - Then for any cell that sees both wings, eliminate z.
+
+   Why it works:
+     If pivot is y, then A must be x and B must be z (or equivalent cases);
+     if pivot is x, then wings force y and z. Either way, z becomes unavoidable
+     in at least one wing, so any common peer can’t also be z.
+
+12) COLORING (simple two-coloring on strong links)
+   Idea:
+     For a digit d, build strong links:
+       in a unit, if d appears in exactly 2 candidate cells, those two cells form
+       a “strong link” (if one isn’t d, the other must be d).
+     Color the graph bipartitely (two colors).
+     Two classic deductions:
+       (A) If two same-colored candidates appear in one unit, that color is false.
+       (B) If a cell sees candidates of both colors, it cannot be d.
+
+   Detection:
+     For each digit:
+       build strong link edges from units with exactly 2 d-candidates.
+       BFS/DFS two-color connected components.
+       apply:
+         (B) eliminate d from any candidate cell that sees both colors
+         (A) if same color occurs twice in a unit, some placements become forced
+
+   Why it works:
+     Strong links create “either/or” constraints. Two-coloring tracks parity of those
+     constraints; contradictions become visible as color conflicts.
+
+13) CHAINS (AIC – Alternating Inference Chains) [LIMITED IMPLEMENTATION]
+   Idea (conceptual):
+     AICs alternate strong and weak inferences:
+       - Strong link: in a unit, exactly two candidates for a digit => one implies the other.
+       - Weak link: two candidates in same unit => cannot both be true.
+     If an alternating chain forms a contradiction cycle under an assumption,
+     you can eliminate a candidate.
+
+   What this script does:
+     - Digit-focused graph:
+         nodes are “cell can be digit d”.
+         strong edges come from “exactly two” in a unit.
+         weak edges come from “share a unit”.
+     - We explore alternating paths up to a small depth limit.
+     - If we find a contradiction loop (start reaches a node weak-linked back to start
+       in the wrong parity), we eliminate the start candidate.
+
+   Why it works:
+     Alternation encodes “if this then that” (strong) and “not both” (weak).
+     Certain loops mean “assuming start=true forces start=false”, so start is false.
+
+   Note:
+     Full AIC engines cover many more end conditions and multi-digit nodes.
+     This limited version is intentionally small and readable.
+
+14) FORCING CHAINS (contradiction probing)
+   Idea:
+     Pick a cell with a small candidate set (2-3).
+     Temporarily assume one candidate is true, propagate consequences.
+     If you reach a contradiction, that candidate is impossible => eliminate it.
+
+   Detection:
+     Choose a best “probe cell” (smallest candidate count).
+     For each candidate:
+       clone puzzle, place candidate, propagate (forced singles + cheap hidden singles).
+       if contradiction => eliminate candidate in the real puzzle.
+
+   Why it works:
+     If an assumption makes the puzzle impossible, the assumption must be false.
+
+15) UNIQUE RECTANGLE (UR)
+   Idea:
+     In a uniquely solvable Sudoku, you cannot allow a “deadly pattern” where two digits
+     can swap in a 2x2 rectangle producing a second solution.
+     A common UR Type 1:
+       - In a rectangle of 4 cells, three are exactly {a,b}
+       - The fourth is {a,b,x,...}
+       - Then eliminate x,... from the fourth cell to avoid multiple solutions.
+
+   Detection (UR Type 1):
+     Iterate all rectangles formed by choosing 2 rows and 2 cols.
+     Check:
+       - all four cells empty
+       - at least 3 cells have exactly the same pair {a,b}
+       - the 4th has extra candidates
+     Eliminate an extra candidate from the 4th.
+
+   Why it works:
+     Leaving the extra allows both {a,b} assignments in the rectangle, enabling
+     a second solution (contradicting uniqueness).
+
+16) GUESSING (TRIAL & ERROR / BACKTRACKING)
+   Idea:
+     When deductions stall, systematically explore alternatives:
+       - Pick an unfilled cell with the fewest candidates (MRV heuristic).
+       - Try each candidate, recurse.
+       - If contradiction, backtrack and try next.
+
+   Why it works:
+     Sudoku is a finite constraint satisfaction problem.
+     Backtracking is complete: if a solution exists, it will find it.
+
+------------------------------------------------------------------------------
+PRINTING ACTIONS
+------------------------------------------------------------------------------
+
+Whenever a method finds a usable action, we print:
+
+  1) What to place / eliminate and where (row/column)
+  2) A short explanation of the reasoning pattern
+
+Placements come from “place” actions.
+Eliminations come from “elim” actions.
+Eliminations often *cause* new singles via propagation, which then become placements.
+
+------------------------------------------------------------------------------
+
+Below this header, the code implements the described rules as directly as possible.
 """
 
 from __future__ import annotations
