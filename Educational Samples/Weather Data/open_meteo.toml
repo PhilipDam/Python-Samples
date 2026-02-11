@@ -1,0 +1,121 @@
+# open_meteo.toml
+# Configuration for calling Open-Meteo APIs from Python.
+#
+# Notes:
+# - Open-Meteo's free endpoints typically do NOT require an API key. :contentReference[oaicite:3]{index=3}
+# - You pass parameters as standard querystring key/value pairs.
+
+[open_meteo]
+user_agent = "MyPythonApp/1.0 (+https://example.com/contact)"
+timeout_seconds = 20
+connect_timeout_seconds = 5
+
+# Conservative retry behavior (useful for transient network hiccups).
+max_retries = 3
+retry_backoff_seconds = 0.6
+retry_on_http_status = [429, 500, 502, 503, 504]
+
+# Optional: if you add your own caching layer in Python, this gives you one place
+# to control its behavior.
+[open_meteo.cache]
+enabled = true
+ttl_seconds = 600  # 10 minutes
+
+# -------------------------
+# API endpoints
+# -------------------------
+[open_meteo.endpoints]
+forecast_url   = "https://api.open-meteo.com/v1/forecast"
+air_quality_url = "https://air-quality-api.open-meteo.com/v1/air-quality"
+geocoding_url  = "https://geocoding-api.open-meteo.com/v1/search"
+
+# -------------------------
+# Default parameter presets
+# (You can override any of these per request.)
+# -------------------------
+[open_meteo.defaults]
+timezone = "auto"
+timeformat = "iso8601"
+
+# Units (Open-Meteo supports multiple unit systems; keep your app consistent by default.)
+temperature_unit = "celsius"
+windspeed_unit = "kmh"
+precipitation_unit = "mm"
+
+# -------------------------
+# Forecast API preset
+# -------------------------
+[open_meteo.forecast]
+# Typical useful blocks:
+# - "current" is supported for many variables in the UI/docs and is handy for dashboards.
+# - "hourly" and "daily" are arrays/series.
+forecast_days = 7
+
+# Example variable sets; trim to what you actually need.
+current = [
+  "temperature_2m",
+  "relative_humidity_2m",
+  "wind_speed_10m",
+  "weather_code"
+]
+
+hourly = [
+  "temperature_2m",
+  "precipitation_probability",
+  "precipitation",
+  "cloud_cover",
+  "wind_speed_10m"
+]
+
+daily = [
+  "weather_code",
+  "temperature_2m_max",
+  "temperature_2m_min",
+  "sunrise",
+  "sunset",
+  "precipitation_sum",
+  "wind_speed_10m_max"
+]
+
+# -------------------------
+# Air Quality API preset
+# -------------------------
+[open_meteo.air_quality]
+forecast_days = 5
+
+current = [
+  "european_aqi",
+  "us_aqi",
+  "pm10",
+  "pm2_5",
+  "nitrogen_dioxide",
+  "ozone"
+]
+
+hourly = [
+  "european_aqi",
+  "pm10",
+  "pm2_5",
+  "ozone",
+  "nitrogen_dioxide"
+]
+
+# -------------------------
+# Geocoding API preset
+# -------------------------
+[open_meteo.geocoding]
+language = "en"
+count = 10
+# country_code = "DK"   # optional filter (ISO 3166-1 alpha-2)
+# format = "json"       # default is already JSON
+
+# -------------------------
+# Profiles (optional): named bundles you can choose at runtime
+# -------------------------
+[profiles.copenhagen]
+latitude = 55.6761
+longitude = 12.5683
+
+[profiles.airport_kastrup]
+latitude = 55.6180
+longitude = 12.6560
